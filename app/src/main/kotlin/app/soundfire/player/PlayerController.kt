@@ -19,7 +19,9 @@ import app.soundfire.data.ArtworkSize
 import app.soundfire.data.Track
 import app.soundfire.data.soundcloud.SoundCloudApi
 import app.soundfire.taste.TasteEngine
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,7 +82,11 @@ class PlayerController(
     private var lastTrack: Track? = null
     private var lastPositionMs = 0L
     private var recoveryAttempts = 0
-    private var extending = false
+
+    // Bumped whenever the queue is replaced or cleared, so a slow autoplay lookup started for an
+    // old queue can't append its results to the new one.
+    private var queueGeneration = 0
+    private var autoplayJob: Job? = null
 
     init {
         player.addListener(object : Player.Listener {
@@ -137,6 +143,7 @@ class PlayerController(
             return
         }
         recordFinished(completed = false)
+        invalidateQueue()
         playable.forEach { tracks[it.id] = it }
         player.setMediaItems(playable.map(::mediaItem), 0, 0L)
         player.prepare()
@@ -164,6 +171,7 @@ class PlayerController(
 
     fun stop() {
         recordFinished(completed = false)
+        invalidateQueue()
         player.stop()
         player.clearMediaItems()
         lastTrack = null
@@ -173,6 +181,12 @@ class PlayerController(
     fun release() {
         session.release()
         player.release()
+    }
+
+    private fun invalidateQueue() {
+        queueGeneration++
+        autoplayJob?.cancel()
+        autoplayJob = null
     }
 
     private fun currentTrack(): Track? = player.currentMediaItem?.mediaId?.toLongOrNull()?.let(tracks::get)
@@ -188,12 +202,13 @@ class PlayerController(
     private fun extendQueueIfNeeded() {
         val current = currentTrack() ?: return
         val remaining = player.mediaItemCount - player.currentMediaItemIndex - 1
-        if (remaining >= 2 || extending) return
-        extending = true
-        scope.launch {
+        if (remaining >= 2 || autoplayJob?.isActive == true) return
+        val generation = queueGeneration
+        autoplayJob = scope.launch {
             try {
                 val queued = (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).mediaId.toLongOrNull() }
                 val next = taste.nextFor(current, exclude = queued.toSet(), count = 5)
+                if (generation != queueGeneration) return@launch
                 next.forEach { tracks[it.id] = it }
                 player.addMediaItems(next.map(::mediaItem))
                 if (player.playbackState == Player.STATE_ENDED && next.isNotEmpty()) {
@@ -201,10 +216,11 @@ class PlayerController(
                     player.prepare()
                     player.play()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Autoplay lookup failed", e)
             } finally {
-                extending = false
                 publish()
             }
         }

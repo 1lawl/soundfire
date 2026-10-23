@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -54,6 +55,7 @@ import app.soundfire.R
 import app.soundfire.data.ArtworkSize
 import app.soundfire.data.Track
 import app.soundfire.player.PlayerState
+import app.soundfire.taste.TasteEngine
 import app.soundfire.ui.components.Artwork
 import app.soundfire.ui.components.FocusBox
 import app.soundfire.ui.components.NowPlayingPill
@@ -62,6 +64,7 @@ import app.soundfire.ui.components.SfIcons
 import app.soundfire.ui.theme.SafeArea
 import app.soundfire.ui.theme.SfColors
 import app.soundfire.ui.theme.sfText
+import app.soundfire.ui.components.formatCount
 
 /** "SoundFire — TV Home Screen" (MagicPath freshly-castle-2892), backed by live data. */
 @Composable
@@ -74,6 +77,7 @@ fun HomeScreen(
     onOpenNowPlaying: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUsername: () -> Unit,
+    onOpenLikes: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val firstCard = remember { FocusRequester() }
@@ -90,9 +94,11 @@ fun HomeScreen(
                 Header(
                     username = state.username,
                     likeCount = state.likeCount,
+                    syncing = state.syncing,
                     searchFocus = searchFocus,
                     onOpenSearch = onOpenSearch,
                     onOpenUsername = onOpenUsername,
+                    onOpenLikes = onOpenLikes,
                 )
             }
             item {
@@ -129,23 +135,8 @@ fun HomeScreen(
                     }
                 }
             }
-            state.because?.let { (seed, tracks) ->
-                item {
-                    Section(top = 64) {
-                        Padded {
-                            Eyebrow("From your listening", Color.White.copy(0.35f))
-                            BasicText(
-                                "Because you played “${seed.title}”",
-                                style = sfText(30, FontWeight.Light, Color.White.copy(0.9f), tracking = -0.05),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(24.dp))
-                        }
-                        CompactRow(tracks, playerState, onPlay)
-                    }
-                }
-            }
+            // Personal rows: the first two sit above Trending, the rest below it.
+            items(state.rows.take(2)) { row -> PersonalRow(row, playerState, onPlay) }
             if (state.trending.isNotEmpty()) {
                 item {
                     Section(top = 64) {
@@ -158,6 +149,7 @@ fun HomeScreen(
                     }
                 }
             }
+            items(state.rows.drop(2)) { row -> PersonalRow(row, playerState, onPlay) }
             item {
                 Section(top = 56) {
                     Padded {
@@ -195,6 +187,23 @@ fun HomeScreen(
     }
 }
 
+@Composable
+private fun PersonalRow(row: TasteEngine.HomeRow, playerState: PlayerState, onPlay: (List<Track>, Int) -> Unit) {
+    Section(top = 64) {
+        Padded {
+            Eyebrow(row.eyebrow, Color.White.copy(0.35f))
+            BasicText(
+                row.title,
+                style = sfText(30, FontWeight.Light, Color.White.copy(0.9f), tracking = -0.05),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+        CompactRow(row.tracks, playerState, onPlay)
+    }
+}
+
 private val FEATURED_CARD_WIDTH = 300.dp
 private val CARD_GAP = 20.dp
 
@@ -214,9 +223,11 @@ private fun Padded(content: @Composable () -> Unit) {
 private fun Header(
     username: String?,
     likeCount: Int,
+    syncing: Boolean,
     searchFocus: FocusRequester,
     onOpenSearch: () -> Unit,
     onOpenUsername: () -> Unit,
+    onOpenLikes: (String) -> Unit,
 ) {
     Row(
         Modifier
@@ -246,10 +257,18 @@ private fun Header(
                 SfIcon(SfIcons.User, Color.White.copy(if (focused) 0.9f else 0.55f), 16.dp)
                 Spacer(Modifier.width(10.dp))
                 BasicText(
-                    if (username == null) "Import your likes" else "@$username · $likeCount likes",
+                    if (username == null) "Import your likes" else "@$username",
                     style = sfText(14, FontWeight.Light, Color.White.copy(if (focused) 0.95f else 0.6f)),
                 )
             }
+        }
+        if (username != null) {
+            Spacer(Modifier.width(10.dp))
+            HeaderPill(
+                SfIcons.Heart,
+                if (syncing) "Syncing likes…" else "${formatCount(likeCount)} likes",
+                onClick = { onOpenLikes(username) },
+            )
         }
         Spacer(Modifier.width(12.dp))
         FocusBox(
@@ -260,6 +279,22 @@ private fun Header(
         ) { focused ->
             Box(Modifier.size(48.dp).background(Color.White.copy(if (focused) 0.07f else 0f), CircleShape))
             SfIcon(SfIcons.Search, Color.White.copy(if (focused) 1f else 0.6f), 20.dp)
+        }
+    }
+}
+
+@Composable
+private fun HeaderPill(icon: ImageVector, label: String, onClick: () -> Unit) {
+    FocusBox(onClick = onClick, shape = CircleShape, ringOffset = 2.dp) { focused ->
+        Row(
+            Modifier
+                .background(Color.White.copy(if (focused) 0.1f else 0.06f), CircleShape)
+                .padding(horizontal = 18.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SfIcon(icon, if (focused) SfColors.Accent else Color.White.copy(0.55f), 16.dp)
+            Spacer(Modifier.width(10.dp))
+            BasicText(label, style = sfText(14, FontWeight.Light, Color.White.copy(if (focused) 0.95f else 0.6f)))
         }
     }
 }

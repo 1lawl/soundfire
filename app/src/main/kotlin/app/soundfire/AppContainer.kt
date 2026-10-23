@@ -30,6 +30,7 @@ class AppContainer(context: Context) {
     val api = SoundCloudApi(http, ClientIdProvider(http, prefs))
 
     private val database = Room.databaseBuilder(context, SoundFireDatabase::class.java, "soundfire.db")
+        .addMigrations(SoundFireDatabase.MIGRATION_1_2)
         .fallbackToDestructiveMigration(dropAllTables = true)
         .build()
 

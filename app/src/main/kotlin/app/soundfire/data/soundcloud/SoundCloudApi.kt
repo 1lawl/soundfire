@@ -2,6 +2,7 @@ package app.soundfire.data.soundcloud
 
 import android.util.Log
 import app.soundfire.BuildConfig
+import app.soundfire.data.Playlist
 import app.soundfire.data.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -84,6 +85,26 @@ class SoundCloudApi(private val http: OkHttpClient, private val clientIds: Clien
             ApiUser.serializer(),
         )
 
+    /** Playlists a user made, followed by playlists they liked (albums included), up to [limit] of each. */
+    suspend fun playlists(userId: Long, limit: Int = 50): List<Playlist> {
+        val own = get("/users/$userId/playlists", mapOf("limit" to "$limit"), ApiPage.serializer(ApiPlaylist.serializer())).collection
+        val liked = get("/users/$userId/playlist_likes", mapOf("limit" to "$limit"), ApiPage.serializer(ApiPlaylistLike.serializer()))
+            .collection.mapNotNull { it.playlist }
+        return (own + liked).distinctBy { it.id }.mapNotNull { p ->
+            Playlist(
+                id = p.id,
+                title = p.title ?: return@mapNotNull null,
+                owner = p.user?.username.orEmpty(),
+                artworkUrl = p.artworkUrl,
+                trackIds = emptyList(),
+            )
+        }
+    }
+
+    /** A playlist's tracks in order; SoundCloud only sends the first few in full, so the rest are hydrated. */
+    suspend fun playlistTracks(playlistId: Long): List<Track> =
+        hydrate(get("/playlists/$playlistId", emptyMap(), ApiPlaylist.serializer()).tracks)
+
     /** One page of a user's public track likes, newest first. */
     suspend fun likesPage(userId: Long, next: String? = null): Page<Pair<Track, Long>> {
         val page = get(next ?: "/users/$userId/track_likes", mapOf("limit" to "$LIKES_PAGE_SIZE"), ApiPage.serializer(ApiLike.serializer()))
@@ -99,12 +120,14 @@ class SoundCloudApi(private val http: OkHttpClient, private val clientIds: Clien
     suspend fun allLikes(userId: Long, onProgress: (Int) -> Unit = {}): List<Pair<Track, Long>> {
         val likes = mutableListOf<Pair<Track, Long>>()
         var next: String? = null
+        // Follow next_href to the end: a page can be empty after filtering out deleted or private
+        // tracks without being the last one.
         do {
             val page = likesPage(userId, next)
             likes += page.items
             onProgress(likes.size)
-            next = page.next
-        } while (next != null && page.items.isNotEmpty())
+            next = page.next?.takeIf { it != next }
+        } while (next != null)
         return likes
     }
 

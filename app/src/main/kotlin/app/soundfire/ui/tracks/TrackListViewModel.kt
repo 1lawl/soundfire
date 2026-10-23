@@ -36,6 +36,7 @@ class TrackListViewModel(
         if (inFlight || _state.value.endReached) return
         inFlight = true
         _state.update { it.copy(loading = true, error = null) }
+        val before = _state.value.tracks.size
         viewModelScope.launch {
             runCatching { source(next) }
                 .onSuccess { page ->
@@ -46,7 +47,7 @@ class TrackListViewModel(
                             tracks = s.tracks + page.items.filterNot { it.id in known },
                             total = page.total ?: s.total,
                             loading = false,
-                            endReached = page.next == null || page.items.isEmpty(),
+                            endReached = page.next == null,
                         )
                     }
                 }
@@ -55,6 +56,9 @@ class TrackListViewModel(
                     _state.update { it.copy(loading = false, error = "Couldn't load more. Press OK to retry.") }
                 }
             inFlight = false
+            // A page can come back empty after filtering (deleted or private tracks) while more
+            // pages remain; keep going so the list doesn't stall with nothing to scroll toward.
+            if (_state.value.error == null && !_state.value.endReached && _state.value.tracks.size == before) loadMore()
         }
     }
 

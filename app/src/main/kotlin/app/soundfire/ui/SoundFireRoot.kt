@@ -12,9 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.soundfire.AppContainer
+import app.soundfire.data.soundcloud.Page
 import app.soundfire.ui.home.HomeScreen
 import app.soundfire.ui.home.HomeViewModel
 import app.soundfire.ui.nowplaying.NowPlayingScreen
@@ -40,9 +41,17 @@ import app.soundfire.ui.search.KeyboardMode
 import app.soundfire.ui.search.KeyboardOverlay
 import app.soundfire.ui.search.SearchViewModel
 import app.soundfire.ui.theme.sfText
+import app.soundfire.ui.tracks.TrackListScreen
+import app.soundfire.ui.tracks.TrackListViewModel
+import app.soundfire.ui.components.formatCount
 import kotlinx.coroutines.delay
 
-private enum class Screen { Home, NowPlaying }
+private sealed interface Screen {
+    data object Home : Screen
+    data object NowPlaying : Screen
+    data class SearchResults(val query: String) : Screen
+    data class Likes(val username: String) : Screen
+}
 
 private const val SEEK_STEP_MS = 10_000L
 
@@ -52,8 +61,16 @@ fun SoundFireRoot(container: AppContainer) {
     val playerState by player.state.collectAsStateWithLifecycle()
     val homeViewModel = viewModel { HomeViewModel(container.api, container.taste, container.prefs) }
     val searchViewModel = viewModel { SearchViewModel(container.api) }
+    val homeState by homeViewModel.state.collectAsStateWithLifecycle()
 
-    var screen by rememberSaveable { mutableStateOf(Screen.Home) }
+    // Back stack: Back pops one screen; Home is always at the bottom.
+    val backStack = remember { mutableStateListOf<Screen>(Screen.Home) }
+    val screen = backStack.last()
+    val navigate: (Screen) -> Unit = { target ->
+        backStack.remove(target)
+        backStack.add(target)
+    }
+    val goHome: () -> Unit = { backStack.removeAll { it != Screen.Home } }
     var keyboard by remember { mutableStateOf<KeyboardMode?>(null) }
     val searchButtonFocus = remember { FocusRequester() }
     // Live snapshot source for the keyboard's frosted glass.
@@ -66,7 +83,7 @@ fun SoundFireRoot(container: AppContainer) {
     }
 
     BackHandler(enabled = keyboard != null) { keyboard = null }
-    BackHandler(enabled = keyboard == null && screen == Screen.NowPlaying) { screen = Screen.Home }
+    BackHandler(enabled = keyboard == null && backStack.size > 1) { backStack.removeAt(backStack.lastIndex) }
 
     var keyboardWasOpen by remember { mutableStateOf(false) }
     LaunchedEffect(keyboard) {
@@ -84,7 +101,7 @@ fun SoundFireRoot(container: AppContainer) {
                     Key.MediaFastForward -> player.seekBy(SEEK_STEP_MS)
                     Key.MediaRewind -> player.seekBy(-SEEK_STEP_MS)
                     // The remote's ☰ button jumps to Playing Now from anywhere.
-                    Key.Menu -> if (keyboard == null && playerState.current != null) screen = Screen.NowPlaying else return@onPreviewKeyEvent false
+                    Key.Menu -> if (keyboard == null && playerState.current != null) navigate(Screen.NowPlaying) else return@onPreviewKeyEvent false
                     else -> return@onPreviewKeyEvent false
                 }
                 true
@@ -105,9 +122,10 @@ fun SoundFireRoot(container: AppContainer) {
                     searchFocus = searchButtonFocus,
                     onPlay = player::play,
                     onTogglePlay = player::togglePlayPause,
-                    onOpenNowPlaying = { screen = Screen.NowPlaying },
+                    onOpenNowPlaying = { navigate(Screen.NowPlaying) },
                     onOpenSearch = { keyboard = KeyboardMode.Search },
                     onOpenUsername = { keyboard = KeyboardMode.Username },
+                    onOpenLikes = { username -> navigate(Screen.Likes(username)) },
                 )
                 Screen.NowPlaying -> NowPlayingScreen(
                     state = playerState,
@@ -116,10 +134,40 @@ fun SoundFireRoot(container: AppContainer) {
                     onSeek = player::seekBy,
                     onStop = {
                         player.stop()
-                        screen = Screen.Home
+                        goHome()
                     },
-                    onHome = { screen = Screen.Home },
+                    onHome = goHome,
                     onOpenSearch = { keyboard = KeyboardMode.Search },
+                )
+                is Screen.SearchResults -> TrackListScreen(
+                    eyebrow = "Search results",
+                    title = "“${screen.query}”",
+                    countLabel = { count, exact -> "${formatCount(count)}${if (exact) "" else "+"} tracks" },
+                    viewModel = viewModel(key = "search:${screen.query}") {
+                        TrackListViewModel { next -> container.api.searchTracksPage(screen.query, next) }
+                    },
+                    playerState = playerState,
+                    onPlay = player::play,
+                    onTogglePlay = player::togglePlayPause,
+                    onOpenNowPlaying = { navigate(Screen.NowPlaying) },
+                    secondaryAction = "New search" to { keyboard = KeyboardMode.Search },
+                )
+                is Screen.Likes -> TrackListScreen(
+                    knownTotal = homeState.likeCount.takeIf { homeState.username.equals(screen.username, ignoreCase = true) && it > 0 },
+                    eyebrow = "Liked tracks",
+                    title = "@${screen.username}",
+                    countLabel = { count, exact -> "${formatCount(count)}${if (exact) "" else "+"} liked tracks" },
+                    viewModel = viewModel(key = "likes:${screen.username}") {
+                        var userId: Long? = null
+                        TrackListViewModel { next ->
+                            val id = userId ?: container.api.resolveUser(screen.username).id.also { userId = it }
+                            container.api.likesPage(id, next).let { page -> Page(page.items.map { it.first }, page.next) }
+                        }
+                    },
+                    playerState = playerState,
+                    onPlay = player::play,
+                    onTogglePlay = player::togglePlayPause,
+                    onOpenNowPlaying = { navigate(Screen.NowPlaying) },
                 )
             }
         }
@@ -154,6 +202,10 @@ fun SoundFireRoot(container: AppContainer) {
                     keyboard = null
                 },
                 onImported = homeViewModel::reload,
+                onSubmitSearch = { query ->
+                    keyboard = null
+                    navigate(Screen.SearchResults(query))
+                },
                 onClose = { keyboard = null },
             )
         }

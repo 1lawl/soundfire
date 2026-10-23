@@ -30,3 +30,11 @@ data class Track(
 
     fun artwork(size: ArtworkSize): String? = artworkUrl?.replace("-large.", "-${size.suffix}.")
 }
+
+data class Playlist(
+    val id: Long,
+    val title: String,
+    val owner: String,
+    val artworkUrl: String?,
+    val trackIds: List<Long>,
+)

@@ -8,7 +8,6 @@ import app.soundfire.data.Track
 import app.soundfire.data.soundcloud.SoundCloudApi
 import app.soundfire.taste.TasteEngine
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +19,8 @@ data class HomeState(
     val loading: Boolean = true,
     val featured: List<Track> = emptyList(),
     val featuredIsPersonal: Boolean = false,
-    val because: Pair<Track, List<Track>>? = null,
+    val rows: List<TasteEngine.HomeRow> = emptyList(),
+    val syncing: Boolean = false,
     val trending: List<Track> = emptyList(),
     val moods: List<String> = MOODS,
     val selectedMood: String = MOODS[3],
@@ -43,6 +43,10 @@ class HomeViewModel(
     private val _state = MutableStateFlow(HomeState())
     val state: StateFlow<HomeState> = _state.asStateFlow()
     private var moodJob: Job? = null
+    private var trendingPool: List<Track> = emptyList()
+
+    // Kept until a later load succeeds, so a failed start still explains the empty screen.
+    private var trendingError: Throwable? = null
 
     init {
         viewModelScope.launch {
@@ -53,14 +57,21 @@ class HomeViewModel(
         selectMood(_state.value.selectedMood)
     }
 
+    /**
+     * Shows cached personal rows immediately, then syncs the linked user's likes and playlists
+     * (new likes only, usually one request) and rebuilds the rows with whatever changed.
+     */
     fun reload() {
         viewModelScope.launch {
-            val trending = async { runCatching { api.trending(24) }.onFailure { Log.w(TAG, "Trending failed", it) } }
-            loadPersonalRows(trending.await().getOrElse { emptyList() }, trending.await().exceptionOrNull())
-            // Fetching fresh candidates takes a few seconds; show what's cached first, then update.
-            runCatching { taste.refreshCandidates() }
-                .onSuccess { loadPersonalRows(_state.value.trending + _state.value.featured, null) }
-                .onFailure { Log.w(TAG, "Candidate refresh failed", it) }
+            val trending = runCatching { api.trending(24) }.onFailure { Log.w(TAG, "Trending failed", it) }
+            trendingPool = trending.getOrElse { emptyList() }
+            trendingError = trending.exceptionOrNull()
+            loadPersonalRows()
+            _state.update { it.copy(syncing = true) }
+            runCatching { taste.sync() }
+                .onSuccess { loadPersonalRows() }
+                .onFailure { Log.w(TAG, "Sync failed", it) }
+            _state.update { it.copy(syncing = false) }
         }
     }
 
@@ -76,9 +87,9 @@ class HomeViewModel(
         }
     }
 
-    private suspend fun loadPersonalRows(trendingPool: List<Track>, error: Throwable?) {
+    private suspend fun loadPersonalRows() {
         val mix = runCatching { taste.mix(FEATURED_MAX) }.onFailure { Log.w(TAG, "Mix failed", it) }.getOrElse { emptyList() }
-        val because = runCatching { taste.becauseYouPlayed(10) }.onFailure { Log.w(TAG, "Because row failed", it) }.getOrNull()
+        val rows = runCatching { taste.personalRows() }.onFailure { Log.w(TAG, "Personal rows failed", it) }.getOrElse { emptyList() }
         val personal = mix.size >= 4
         val pool = trendingPool.filter { it.playable }.distinctBy { it.id }
         val featured = if (personal) mix else pool.take(FEATURED_MAX)
@@ -87,9 +98,9 @@ class HomeViewModel(
                 loading = false,
                 featured = featured,
                 featuredIsPersonal = personal,
-                because = because,
+                rows = rows,
                 trending = pool.filterNot { t -> featured.any { f -> f.id == t.id } }.take(12),
-                error = if (featured.isEmpty()) error?.let { "Couldn't reach SoundCloud. Check the TV's connection." } else null,
+                error = if (featured.isEmpty()) trendingError?.let { "Couldn't reach SoundCloud. Check the TV's connection." } else null,
             )
         }
     }

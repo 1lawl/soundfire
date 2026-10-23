@@ -11,6 +11,8 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.soundfire.data.Track
 import kotlinx.coroutines.flow.Flow
 
@@ -50,6 +52,18 @@ data class LikedSeedEntity(
     val likedAt: Long,
 )
 
+/** A playlist the user made or liked; [trackIds] keeps its order (comma separated). */
+@Entity(tableName = "playlists")
+data class PlaylistEntity(
+    @PrimaryKey val id: Long,
+    val title: String,
+    val owner: String,
+    val artworkUrl: String?,
+    val trackIds: String,
+    val position: Int,
+    val updatedAt: Long,
+)
+
 /** A recommendation candidate and where it came from: a seed track's related list, station, or artist. */
 @Entity(tableName = "candidates", primaryKeys = ["trackId", "seedId", "kind"])
 data class CandidateEntity(
@@ -66,7 +80,10 @@ abstract class TasteDao {
     abstract suspend fun upsertTracks(tracks: List<TrackEntity>)
 
     @Query("SELECT * FROM tracks WHERE id IN (:ids)")
-    abstract suspend fun tracks(ids: List<Long>): List<TrackEntity>
+    protected abstract suspend fun tracksChunk(ids: List<Long>): List<TrackEntity>
+
+    /** Chunked: Android 11's SQLite allows at most 999 bound parameters per statement. */
+    open suspend fun tracks(ids: List<Long>): List<TrackEntity> = ids.chunked(MAX_SQL_PARAMS).flatMap { tracksChunk(it) }
 
     @Insert
     abstract suspend fun insertEvent(event: PlayEventEntity)
@@ -82,6 +99,34 @@ abstract class TasteDao {
 
     @Query("SELECT COUNT(*) FROM liked_seeds")
     abstract fun likeCount(): Flow<Int>
+
+    @Query("SELECT trackId FROM liked_seeds")
+    abstract suspend fun likedIds(): List<Long>
+
+    @Query("DELETE FROM liked_seeds")
+    protected abstract suspend fun clearLikes()
+
+    /** Full re-sync: drops tracks that were unliked on SoundCloud since the last one. */
+    @Transaction
+    open suspend fun replaceLikes(likes: List<LikedSeedEntity>) {
+        clearLikes()
+        upsertLikes(likes)
+    }
+
+    @Query("SELECT * FROM playlists ORDER BY position")
+    abstract suspend fun playlists(): List<PlaylistEntity>
+
+    @Query("DELETE FROM playlists")
+    protected abstract suspend fun clearPlaylists()
+
+    @Upsert
+    protected abstract suspend fun upsertPlaylists(playlists: List<PlaylistEntity>)
+
+    @Transaction
+    open suspend fun replacePlaylists(playlists: List<PlaylistEntity>) {
+        clearPlaylists()
+        upsertPlaylists(playlists)
+    }
 
     @Query("SELECT * FROM candidates")
     abstract suspend fun candidates(): List<CandidateEntity>
@@ -103,13 +148,28 @@ abstract class TasteDao {
 }
 
 @Database(
-    entities = [TrackEntity::class, PlayEventEntity::class, LikedSeedEntity::class, CandidateEntity::class],
-    version = 1,
+    entities = [TrackEntity::class, PlayEventEntity::class, LikedSeedEntity::class, CandidateEntity::class, PlaylistEntity::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class SoundFireDatabase : RoomDatabase() {
     abstract fun taste(): TasteDao
+
+    companion object {
+        /** v2 adds playlists; listening history and imported likes are kept. */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `playlists` (`id` INTEGER NOT NULL, `title` TEXT NOT NULL, " +
+                        "`owner` TEXT NOT NULL, `artworkUrl` TEXT, `trackIds` TEXT NOT NULL, `position` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+            }
+        }
+    }
 }
+
+private const val MAX_SQL_PARAMS = 900
 
 private const val TAG_SEPARATOR = "\u001F"
 
@@ -143,3 +203,5 @@ fun TrackEntity.toTrack() = Track(
     streamTranscodingUrl = transcodingUrl,
     trackAuthorization = trackAuthorization,
 )
+
+fun PlaylistEntity.trackIdList(): List<Long> = trackIds.split(',').mapNotNull { it.toLongOrNull() }

@@ -51,7 +51,6 @@ import app.soundfire.ui.components.formatDuration
 import app.soundfire.ui.theme.SafeArea
 import app.soundfire.ui.theme.SfColors
 import app.soundfire.ui.theme.sfText
-import java.text.NumberFormat
 
 /**
  * Full-screen list of tracks: search results ("Search" key) or a user's complete likes. Pages load
@@ -61,13 +60,15 @@ import java.text.NumberFormat
 fun TrackListScreen(
     eyebrow: String,
     title: String,
-    countLabel: (Int) -> String,
+    countLabel: (count: Int, exact: Boolean) -> String,
     viewModel: TrackListViewModel,
     playerState: PlayerState,
     onPlay: (List<Track>, Int) -> Unit,
     onTogglePlay: () -> Unit,
     onOpenNowPlaying: () -> Unit,
     secondaryAction: Pair<String, () -> Unit>? = null,
+    /** Exact size when already known locally (the linked user's synced likes). */
+    knownTotal: Int? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val grid = rememberLazyGridState()
@@ -80,13 +81,14 @@ fun TrackListScreen(
     // Fetch the next page once focus gets within two rows of the end.
     LaunchedEffect(grid, state.tracks.size) {
         snapshotFlow { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-            .collect { last -> if (last >= state.tracks.size - 6) viewModel.loadMore() }
+            .collect { last -> if (last >= state.tracks.size - 4) viewModel.loadMore() }
     }
 
     Box(Modifier.fillMaxSize().background(SfColors.HomeBackground)) {
         LazyVerticalGrid(
             state = grid,
-            columns = GridCells.Adaptive(minSize = 520.dp),
+            // Two large tiles per row on a 16:9 screen, readable from the couch.
+            columns = GridCells.Adaptive(minSize = 780.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = SafeArea.Horizontal - 8.dp,
@@ -94,8 +96,8 @@ fun TrackListScreen(
                 top = SafeArea.Vertical,
                 bottom = 160.dp,
             ),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.padding(start = 8.dp, end = 8.dp, bottom = 28.dp)) {
@@ -109,9 +111,11 @@ fun TrackListScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        val count = state.total ?: state.tracks.size
+                        // Search reports a total up front; likes are counted as pages arrive.
+                        val count = knownTotal ?: state.total ?: state.tracks.size
+                        val exact = knownTotal != null || state.total != null || state.endReached
                         BasicText(
-                            if (state.tracks.isEmpty() && state.loading) "Loading…" else countLabel(count),
+                            if (state.tracks.isEmpty() && state.loading) "Loading…" else countLabel(count, exact),
                             style = sfText(16, FontWeight.Light, Color.White.copy(0.5f)),
                         )
                         Spacer(Modifier.weight(1f))
@@ -182,55 +186,55 @@ private fun TrackRow(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().alpha(if (track.playable) 1f else 0.4f),
         enabled = track.playable,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
     ) { focused ->
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(Color.White.copy(if (focused) 0.08f else if (isCurrent) 0.05f else 0f), RoundedCornerShape(16.dp))
-                .padding(8.dp),
+                .background(Color.White.copy(if (focused) 0.08f else if (isCurrent) 0.05f else 0f), RoundedCornerShape(20.dp))
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicText(
                 "$position",
-                style = sfText(13, color = Color.White.copy(0.3f)),
-                modifier = Modifier.width(40.dp),
+                style = sfText(18, color = Color.White.copy(0.3f)),
+                modifier = Modifier.width(56.dp),
             )
-            Artwork(track, ArtworkSize.Small, Modifier.size(88.dp).clip(RoundedCornerShape(10.dp)), compactGradient = true)
-            Spacer(Modifier.width(16.dp))
+            Artwork(track, ArtworkSize.Small, Modifier.size(150.dp).clip(RoundedCornerShape(14.dp)), compactGradient = true)
+            Spacer(Modifier.width(24.dp))
             Column(Modifier.weight(1f)) {
                 BasicText(
                     track.title,
-                    style = sfText(18, color = Color.White.copy(0.92f)),
+                    style = sfText(26, color = Color.White.copy(0.92f), tracking = -0.02),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(8.dp))
                 BasicText(
                     track.artist,
-                    style = sfText(14, FontWeight.Light, Color.White.copy(0.5f)),
+                    style = sfText(19, FontWeight.Light, Color.White.copy(0.55f)),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val meta = Color.White.copy(0.35f)
+                    val meta = Color.White.copy(0.4f)
                     when {
-                        !track.playable -> BasicText("UNAVAILABLE", style = sfText(11, FontWeight.Medium, meta, tracking = 0.16))
+                        !track.playable -> BasicText("UNAVAILABLE", style = sfText(13, FontWeight.Medium, meta, tracking = 0.16))
                         isCurrent -> BasicText(
                             if (isPlaying) "NOW PLAYING" else "PAUSED",
-                            style = sfText(11, FontWeight.Medium, SfColors.Accent, tracking = 0.16),
+                            style = sfText(13, FontWeight.Medium, SfColors.Accent, tracking = 0.16),
                         )
-                        else -> BasicText(formatDuration(track.durationMs), style = sfText(12, color = meta))
+                        else -> BasicText(formatDuration(track.durationMs), style = sfText(15, color = meta))
                     }
-                    Spacer(Modifier.width(16.dp))
-                    SfIcon(SfIcons.Plays, meta, 12.dp)
-                    Spacer(Modifier.width(4.dp))
-                    BasicText(compact(track.plays), style = sfText(12, color = meta))
-                    Spacer(Modifier.width(14.dp))
-                    SfIcon(SfIcons.Heart, meta, 12.dp)
-                    Spacer(Modifier.width(4.dp))
-                    BasicText(compact(track.likes), style = sfText(12, color = meta))
+                    Spacer(Modifier.width(22.dp))
+                    SfIcon(SfIcons.Plays, meta, 15.dp)
+                    Spacer(Modifier.width(6.dp))
+                    BasicText(compact(track.plays), style = sfText(15, color = meta))
+                    Spacer(Modifier.width(18.dp))
+                    SfIcon(SfIcons.Heart, meta, 15.dp)
+                    Spacer(Modifier.width(6.dp))
+                    BasicText(compact(track.likes), style = sfText(15, color = meta))
                 }
             }
         }
@@ -260,7 +264,3 @@ private fun ActionButton(label: String, icon: ImageVector, primary: Boolean = fa
         }
     }
 }
-
-private val countFormat = NumberFormat.getIntegerInstance()
-
-fun formatCount(n: Int): String = countFormat.format(n)

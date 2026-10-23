@@ -24,9 +24,17 @@ class Prefs(context: Context) {
     suspend fun lastCandidateRefresh(): Long = store.data.first()[LAST_REFRESH] ?: 0L
     suspend fun setLastCandidateRefresh(at: Long) = store.edit { it[LAST_REFRESH] = at }
 
+    suspend fun lastFullLikesSync(): Long = store.data.first()[LAST_FULL_SYNC] ?: 0L
+    suspend fun setLastFullLikesSync(at: Long) = store.edit { it[LAST_FULL_SYNC] = at }
+
+    suspend fun lastPlaylistSync(): Long = store.data.first()[LAST_PLAYLIST_SYNC] ?: 0L
+    suspend fun setLastPlaylistSync(at: Long) = store.edit { it[LAST_PLAYLIST_SYNC] = at }
+
     private companion object {
         val CLIENT_ID = stringPreferencesKey("client_id")
         val USERNAME = stringPreferencesKey("username")
         val LAST_REFRESH = longPreferencesKey("last_candidate_refresh")
+        val LAST_FULL_SYNC = longPreferencesKey("last_full_likes_sync")
+        val LAST_PLAYLIST_SYNC = longPreferencesKey("last_playlist_sync")
     }
 }

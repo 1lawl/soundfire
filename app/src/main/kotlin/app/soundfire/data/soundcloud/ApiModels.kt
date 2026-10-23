@@ -64,6 +64,19 @@ data class ApiLike(
 )
 
 @Serializable
+data class ApiPlaylist(
+    val id: Long,
+    val title: String? = null,
+    @SerialName("artwork_url") val artworkUrl: String? = null,
+    @SerialName("track_count") val trackCount: Int = 0,
+    val user: ApiUser? = null,
+    val tracks: List<ApiTrack> = emptyList(),
+)
+
+@Serializable
+data class ApiPlaylistLike(val playlist: ApiPlaylist? = null)
+
+@Serializable
 data class ApiChartItem(val track: ApiTrack? = null)
 
 @Serializable

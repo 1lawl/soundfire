@@ -1,10 +1,26 @@
+# Gradle / Kotlin
 .gradle/
 .kotlin/
 build/
+
+# Local machine config
 local.properties
-*.iml
+
+# IDEs
 .idea/
+*.iml
+.vscode/
+
+# Build artifacts (published on the Releases page instead)
+*.apk
+*.aab
 captures/
+
+# Signing secrets
 *.jks
 *.keystore
 key.properties
+
+# OS
+.DS_Store
+Thumbs.db

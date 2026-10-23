@@ -1,5 +1,6 @@
 package app.soundfire.ui.search
 
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -83,6 +84,7 @@ import app.soundfire.ui.components.FocusBox
 import app.soundfire.ui.components.SfIcon
 import app.soundfire.ui.components.SfIcons
 import app.soundfire.ui.components.compact
+import app.soundfire.ui.components.formatCount
 import app.soundfire.ui.theme.SafeArea
 import app.soundfire.ui.theme.SfColors
 import app.soundfire.ui.theme.sfText
@@ -146,6 +148,7 @@ fun KeyboardOverlay(
                         ImportStatus.Done(count)
                     },
                     onFailure = { e ->
+                        Log.w("KeyboardOverlay", "Likes import failed", e)
                         ImportStatus.Failed(
                             when {
                                 e is NoPublicLikesException -> "@$username has no public likes to import."
@@ -425,8 +428,8 @@ private fun ImportInfo(status: ImportStatus) {
             BasicText(
                 when (status) {
                     ImportStatus.Idle -> "Import your public SoundCloud likes"
-                    is ImportStatus.Running -> if (status.count == 0) "Importing your likes…" else "Importing your likes… ${status.count}"
-                    is ImportStatus.Done -> "Imported ${status.count} likes"
+                    is ImportStatus.Running -> if (status.count == 0) "Importing your likes…" else "Importing your likes… ${formatCount(status.count)}"
+                    is ImportStatus.Done -> "Imported ${formatCount(status.count)} likes"
                     is ImportStatus.Failed -> status.message
                 },
                 style = sfText(22, FontWeight.Light, if (status is ImportStatus.Failed) SfColors.PlayingAccent else Color.White.copy(0.92f)),
