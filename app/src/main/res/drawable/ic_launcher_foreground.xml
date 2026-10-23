@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from ember-fire-tv-icon.svg -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="512" android:viewportHeight="512">
+    <group android:pivotX="256" android:pivotY="256" android:scaleX="0.7" android:scaleY="0.7">
+        <path android:pathData="M256,62C306,138 386,212 386,306C386,384 328,444 256,444C184,444 126,384 126,306C126,212 206,138 256,62Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="178" android:startY="62" android:endX="334" android:endY="444">
+                    <item android:offset="0" android:color="#FFFFC93C" />
+                    <item android:offset="0.48" android:color="#FFFF7A00" />
+                    <item android:offset="1" android:color="#FFE8260F" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M228,242L326,300L228,358Z" android:fillColor="#FF120804" android:strokeColor="#FF120804" android:strokeWidth="20" android:strokeLineJoin="round" />
+    </group>
+</vector>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from ember-fire-tv-icon.svg -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="512dp" android:height="512dp"
+    android:viewportWidth="512" android:viewportHeight="512">
+    <path android:pathData="M116,0H396A116,116 0,0 1,512,116V396A116,116 0,0 1,396,512H116A116,116 0,0 1,0,396V116A116,116 0,0 1,116,0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="0" android:endY="512">
+                <item android:offset="0" android:color="#FF2A1108" />
+                <item android:offset="1" android:color="#FF0A0503" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M116,0H396A116,116 0,0 1,512,116V396A116,116 0,0 1,396,512H116A116,116 0,0 1,0,396V116A116,116 0,0 1,116,0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="256" android:centerY="379" android:gradientRadius="297">
+                <item android:offset="0" android:color="#80FF6A00" />
+                <item android:offset="1" android:color="#00FF6A00" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M256,62C306,138 386,212 386,306C386,384 328,444 256,444C184,444 126,384 126,306C126,212 206,138 256,62Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="178" android:startY="62" android:endX="334" android:endY="444">
+                <item android:offset="0" android:color="#FFFFC93C" />
+                <item android:offset="0.48" android:color="#FFFF7A00" />
+                <item android:offset="1" android:color="#FFE8260F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M228,242L326,300L228,358Z" android:fillColor="#FF120804" android:strokeColor="#FF120804" android:strokeWidth="20" android:strokeLineJoin="round" />
+</vector>
